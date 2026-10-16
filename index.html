@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1b1b2f">
+<title>基金实时估值</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #f5f6fa;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #1b1b2f;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 480px; margin: 0 auto; padding: 16px 16px 40px; }
+
+  /* 搜索栏 */
+  .search { display: flex; gap: 10px; margin-bottom: 14px; }
+  .search input {
+    flex: 1; height: 42px; padding: 0 14px; background: #fff; border: none;
+    border-radius: 10px; font-size: 15px; outline: none;
+    box-shadow: 0 1px 6px rgba(27,27,47,.05);
+  }
+  .search button {
+    width: 76px; height: 42px; background: #1b1b2f; color: #fff; border: none;
+    border-radius: 10px; font-size: 15px;
+  }
+  .search button:active { opacity: .8; }
+
+  /* 卡片 */
+  .card {
+    background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    box-shadow: 0 1px 10px rgba(27,27,47,.05);
+  }
+
+  /* 估值主卡片 */
+  .hero { background: linear-gradient(135deg, #1b1b2f 0%, #2d2d4f 100%); }
+  .hero-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .title-line { display: flex; align-items: baseline; gap: 10px; flex: 1; min-width: 0; }
+  .fund-name {
+    color: #fff; font-size: 17px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .fund-code { color: rgba(255,255,255,.55); font-size: 13px; flex-shrink: 0; }
+  .status { font-size: 11px; padding: 3px 10px; border-radius: 999px; flex-shrink: 0; }
+  .status.open { background: rgba(76,217,123,.16); color: #4cd97b; }
+  .status.closed { background: rgba(255,255,255,.12); color: rgba(255,255,255,.6); }
+  .hero-body { display: flex; }
+  .hero-col { flex: 1; min-width: 0; }
+  .hero-col:first-child { border-right: 1px solid rgba(255,255,255,.12); }
+  .hero-col:last-child { padding-left: 20px; }
+  .lbl { color: rgba(255,255,255,.55); font-size: 12px; margin-bottom: 6px; }
+  .lbl-sub { margin-left: 6px; font-size: 11px; }
+  .num { color: #fff; font-size: 26px; font-weight: 600; margin-bottom: 4px; }
+  .pct { font-size: 14px; font-weight: 600; }
+  .hero .up { color: #ff6b6b; }
+  .hero .down { color: #4cd97b; }
+  .hero .flat { color: rgba(255,255,255,.6); }
+  .tip { margin-top: 14px; color: rgba(255,255,255,.5); font-size: 11px; line-height: 1.5; }
+
+  /* 统计 */
+  .stats { display: flex; }
+  .stat { flex: 1; text-align: center; }
+  .stat + .stat { border-left: 1px solid #eee; }
+  .stat-num { font-size: 18px; font-weight: 600; }
+  .stat-lbl { margin-top: 4px; font-size: 12px; color: #999; }
+
+  /* 持仓明细 */
+  .list { padding: 0 16px 14px; }
+  .list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 0 10px; }
+  .h1 { font-size: 15px; font-weight: 600; }
+  .h2 { font-size: 11px; color: #999; }
+  .row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f2f2f5; font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row-head { color: #999; font-size: 11px; padding: 4px 0; }
+  .c-rank { width: 28px; color: #999; flex-shrink: 0; }
+  .c-name { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .nm { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cd { color: #aaa; font-size: 10px; margin-top: 2px; }
+  .c-price { width: 72px; text-align: right; flex-shrink: 0; }
+  .c-pct { width: 64px; text-align: right; flex-shrink: 0; }
+  .c-w { width: 60px; text-align: right; color: #666; flex-shrink: 0; }
+  .c-c { width: 68px; text-align: right; font-weight: 600; flex-shrink: 0; }
+  .up { color: #e64545; }
+  .down { color: #0fae4f; }
+  .flat { color: #999; }
+
+  /* 页脚 */
+  .footer { text-align: center; color: #bbb; font-size: 11px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="page">
+  <!-- 搜索栏 -->
+  <div class="search">
+    <input id="codeInput" type="text" inputmode="numeric" maxlength="6" placeholder="输入6位基金代码,如 540010">
+    <button id="searchBtn">查询</button>
+  </div>
+
+  <!-- 估值主卡片 -->
+  <div class="card hero">
+    <div class="hero-head">
+      <div class="title-line">
+        <span id="fundName" class="fund-name">--</span>
+        <span id="fundCodeLabel" class="fund-code"></span>
+      </div>
+      <span id="statusTag" class="status closed">--</span>
+    </div>
+    <div class="hero-body">
+      <div class="hero-col">
+        <div class="lbl">官方净值 <span id="navDate" class="lbl-sub"></span></div>
+        <div id="nav" class="num">--</div>
+        <div id="navChange" class="pct flat">--</div>
+      </div>
+      <div class="hero-col">
+        <div class="lbl">模拟估值 <span id="estTime" class="lbl-sub"></span></div>
+        <div id="estNav" class="num">--</div>
+        <div id="estChange" class="pct flat">--</div>
+      </div>
+    </div>
+    <div class="tip">按最新持仓权重 × 个股实时行情测算,与官方净值存在偏差,仅供参考</div>
+  </div>
+
+  <!-- 统计 -->
+  <div class="card stats">
+    <div class="stat"><div id="stockCount" class="stat-num">--</div><div class="stat-lbl">持仓股票数</div></div>
+    <div class="stat"><div id="stockWeight" class="stat-num">--</div><div class="stat-lbl">股票仓位</div></div>
+    <div class="stat"><div id="top10Weight" class="stat-num">--</div><div class="stat-lbl">前十大占比</div></div>
+  </div>
+
+  <!-- 持仓明细 -->
+  <div class="card list">
+    <div class="list-head">
+      <span class="h1">持仓明细</span>
+      <span id="holdingsSource" class="h2">加载中…</span>
+    </div>
+    <div class="row row-head">
+      <span class="c-rank">#</span>
+      <span class="c-name">名称/代码</span>
+      <span class="c-price">最新价</span>
+      <span class="c-pct">涨跌幅</span>
+      <span class="c-w">权重</span>
+      <span class="c-c">贡献</span>
+    </div>
+    <div id="holdingsBody"></div>
+  </div>
+
+  <div class="footer">
+    <div>数据来源:天天基金/东方财富 · 更新于 <span id="updateTime">--</span></div>
+    <div>交易时段每15秒自动刷新 · 结果仅供参考,不构成投资建议</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict'
+
+  // ---------- 内置持仓快照(离线兜底,定期用 refresh_snapshot.ps1 更新) ----------
+  //SNAPSHOT-START
+  const SNAPSHOT = {"code":"540010","name":"汇丰晋信科技先锋股票","date":"2026-06-30","stocks":[{"code":"300308","name":"中际旭创","w":9.57},{"code":"688498","name":"源杰科技","w":9.38},{"code":"300502","name":"新易盛","w":9.29},{"code":"688195","name":"腾景科技","w":9.15},{"code":"688313","name":"仕佳光子","w":8.58},{"code":"300570","name":"太辰光","w":7.83},{"code":"300394","name":"天孚通信","w":7.72},{"code":"688167","name":"炬光科技","w":6.63},{"code":"300620","name":"光库科技","w":5.85},{"code":"688012","name":"中微公司","w":4.89},{"code":"603986","name":"兆易创新","w":4.36},{"code":"603083","name":"剑桥科技","w":2.89},{"code":"002475","name":"立讯精密","w":2.71},{"code":"002463","name":"沪电股份","w":1.96},{"code":"300661","name":"圣邦股份","w":1.59},{"code":"300762","name":"上海瀚讯","w":0.91},{"code":"600879","name":"航天电子","w":0.57},{"code":"002371","name":"北方华创","w":0.04},{"code":"600673","name":"东阳光","w":0.03},{"code":"688808","name":"联讯仪器","w":0.01}]};
+  //SNAPSHOT-END
+
+  // ---------- 状态 ----------
+  var fundCode = '540010'
+  try { fundCode = localStorage.getItem('fundCode') || '540010' } catch (e) {}
+  var navVal = null
+  var estPct = null
+  var holdings = []
+  var holdingsSource = ''
+  var holdingsCode = ''
+  var timer = null
+  var busy = false
+
+  // ---------- 工具 ----------
+  function $(id) { return document.getElementById(id) }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    })
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n }
+  function fmtTime(d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) }
+  function fmtDate(ts) { var d = new Date(ts); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) }
+  function secid(code) { return (code.charAt(0) === '6' ? '1.' : '0.') + code }
+  function isTradingTime() {
+    var d = new Date()
+    var day = d.getDay()
+    if (day === 0 || day === 6) return false
+    var mins = d.getHours() * 60 + d.getMinutes()
+    return (mins >= 570 && mins <= 690) || (mins >= 780 && mins <= 900)
+  }
+  function statusInfo() {
+    var d = new Date()
+    var mins = d.getHours() * 60 + d.getMinutes()
+    if (d.getDay() === 0 || d.getDay() === 6) return { text: '周末休市', open: false }
+    if (isTradingTime()) return { text: '交易中', open: true }
+    if (mins < 570) return { text: '未开盘', open: false }
+    if (mins < 780) return { text: '午间休市', open: false }
+    return { text: '已收盘', open: false }
+  }
+  function periodCandidates() {
+    var now = new Date()
+    var y = now.getFullYear(), m = now.getMonth() + 1
+    var cur = y * 100 + m
+    var list = []
+    for (var yy = y; yy >= y - 2; yy--) {
+      for (var k = 0; k < 4; k++) {
+        var mm = [12, 9, 6, 3][k]
+        if (yy * 100 + mm <= cur) list.push([yy, mm])
+      }
+    }
+    return list
+  }
+  function setText(id, v) { var el = $(id); if (el) el.textContent = v }
+  function setCls(id, v) {
+    var el = $(id)
+    if (el) { el.classList.remove('up', 'down', 'flat'); el.classList.add(v) }
+  }
+
+  // ---------- JSONP 加载器(跨域友好,兼容东财接口) ----------
+  var jpSeq = 0
+  function jsonp(url, timeout) {
+    return new Promise(function (resolve, reject) {
+      var name = '__jp' + (++jpSeq)
+      var s = document.createElement('script')
+      var done = false
+      var t = setTimeout(function () {
+        if (!done) { done = true; cleanup(); reject(new Error('jsonp timeout')) }
+      }, timeout || 8000)
+      function cleanup() {
+        clearTimeout(t)
+        try { delete window[name] } catch (e) {}
+        if (s.parentNode) s.parentNode.removeChild(s)
+      }
+      window[name] = function (data) {
+        if (!done) { done = true; cleanup(); resolve(data) }
+      }
+      s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'cb=' + name + '&callback=' + name
+      s.onerror = function () {
+        if (!done) { done = true; cleanup(); reject(new Error('jsonp failed')) }
+      }
+      document.head.appendChild(s)
+    })
+  }
+
+  // ---------- 数据源1:基金名称 + 最新净值(pingzhongdata,script 直载) ----------
+  function loadFundInfo(code) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script')
+      var done = false
+      var t = setTimeout(function () {
+        if (!done) { done = true; if (s.parentNode) s.parentNode.removeChild(s); reject(new Error('timeout')) }
+      }, 10000)
+      s.src = 'https://fund.eastmoney.com/pingzhongdata/' + code + '.js'
+      s.onload = function () {
+        setTimeout(function () {
+          if (done) return
+          done = true; clearTimeout(t)
+          if (s.parentNode) s.parentNode.removeChild(s)
+          var arr = window.Data_netWorthTrend
+          if (arr && arr.length) {
+            var last = arr[arr.length - 1]
+            resolve({
+              name: window.fS_name || '',
+              navVal: last.y,
+              navDate: fmtDate(last.x),
+              chg: parseFloat(last.equityReturn)
+            })
+          } else {
+            reject(new Error('no nav data'))
+          }
+        }, 30)
+      }
+      s.onerror = function () {
+        if (!done) { done = true; clearTimeout(t); if (s.parentNode) s.parentNode.removeChild(s); reject(new Error('load failed')) }
+      }
+      document.head.appendChild(s)
+    })
+  }
+
+  // ---------- 数据源2:个股实时行情(push2 JSONP) ----------
+  function loadQuotes(stocks) {
+    var secids = stocks.map(function (s) { return secid(s.code) }).join(',')
+    var url = 'https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&secids=' + secids + '&fields=f2,f3,f12,f14'
+    return jsonp(url, 8000)
+  }
+
+  // ---------- 数据源3:持仓(定期报告 → 前十大接口 → 内置快照,逐级回退) ----------
+  function loadHoldings(code) {
+    return loadJJCC(code).then(function (r) {
+      return { list: r.list, name: r.name || '', source: '最新定期报告' + (r.period ? ' (' + r.period[0] + 'Q' + (r.period[1] / 3) + ')' : '') }
+    }).catch(function () {
+      var url = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?FCODE=' + code +
+        '&pageIndex=1&pageSize=10&deviceid=Wap&plat=Wap&product=EFund&version=2.0.0'
+      return jsonp(url, 8000).then(function (d) {
+        var stocks = (d && d.Datas && d.Datas.fundStocks) || []
+        if (!stocks.length) throw new Error('empty')
+        return {
+          list: stocks.map(function (s) { return { code: s.GPDM, name: s.GPJC, w: parseFloat(s.JZBL) } }),
+          name: '',
+          source: '前十大持仓(接口)'
+        }
+      })
+    }).catch(function () {
+      if (SNAPSHOT && SNAPSHOT.stocks && SNAPSHOT.stocks.length) {
+        return { list: SNAPSHOT.stocks, name: SNAPSHOT.name || '', source: '内置快照(' + SNAPSHOT.date + ')' }
+      }
+      throw new Error('no holdings')
+    })
+  }
+
+  // 定期报告完整持仓(接口返回 var apidata=...,script 直载读取)
+  function loadJJCC(code) {
+    return new Promise(function (resolve, reject) {
+      var cands = periodCandidates()
+      var i = 0
+      function tryNext() {
+        if (i >= cands.length) { reject(new Error('no period data')); return }
+        var y = cands[i][0], m = cands[i][1]
+        i++
+        var s = document.createElement('script')
+        var done = false
+        var t = setTimeout(function () {
+          if (!done) { done = true; if (s.parentNode) s.parentNode.removeChild(s); tryNext() }
+        }, 8000)
+        s.src = 'https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=' + code +
+          '&topline=10&year=' + y + '&month=' + m + '&pageIndex=2&pageSize=50'
+        s.onload = function () {
+          setTimeout(function () {
+            if (done) return
+            done = true; clearTimeout(t)
+            if (s.parentNode) s.parentNode.removeChild(s)
+            var apidata = window.apidata
+            var list = parseHoldingsHtml(apidata)
+            if (list.length) {
+              var name = ''
+              try {
+                var nm = (apidata.content || '').match(/title='([^']*)'/)
+                if (nm) name = nm[1]
+              } catch (e) {}
+              resolve({ list: list, name: name, period: [y, m] })
+            } else {
+              tryNext()
+            }
+          }, 50)
+        }
+        s.onerror = function () {
+          if (!done) { done = true; clearTimeout(t); if (s.parentNode) s.parentNode.removeChild(s); tryNext() }
+        }
+        document.head.appendChild(s)
+      }
+      tryNext()
+    })
+  }
+
+  // 解析 apidata.content 中的持仓表格(只取第一张表 = 最新报告期)
+  function parseHoldingsHtml(apidata) {
+    try {
+      var html = (apidata && apidata.content) || ''
+      var first = html.split('</table>')[0] || html
+      var rows = []
+      var trRe = /<tr><td>(\d+)<\/td>([\s\S]*?)<\/tr>/g
+      var tr
+      while ((tr = trRe.exec(first)) !== null) {
+        var cells = tr[2]
+        var codeM = cells.match(/>(\d{6})<\/a>/)
+        var nameM = cells.match(/class='tol'><a[^>]*>([^<]+)<\/a>/)
+        if (!codeM || !nameM) continue
+        var tors = []
+        var torRe = /<td class='tor'>([^<]*)<\/td>/g
+        var t
+        while ((t = torRe.exec(cells)) !== null) tors.push(t[1])
+        var wIdx = -1
+        for (var k = 0; k < tors.length; k++) {
+          if (tors[k].indexOf('%') >= 0) { wIdx = k; break }
+        }
+        if (wIdx < 0) continue
+        var w = parseFloat(tors[wIdx])
+        if (isNaN(w)) continue
+        rows.push({ code: codeM[1], name: nameM[1], w: w })
+      }
+      return rows
+    } catch (e) { return [] }
+  }
+
+  // ---------- 渲染 ----------
+  function renderRows(stocks, quoteMap) {
+    var est = 0
+    var html = ''
+    stocks.forEach(function (h, i) {
+      var q = quoteMap[h.code] || {}
+      var pct = (q.f3 === '-' || q.f3 == null) ? null : Number(q.f3)
+      var contrib = (pct == null) ? null : h.w * pct / 100
+      if (contrib != null) est += contrib
+      function cls(v) { return v > 0 ? 'up' : (v < 0 ? 'down' : 'flat') }
+      html += '<div class="row">' +
+        '<span class="c-rank">' + (i + 1) + '</span>' +
+        '<span class="c-name"><span class="nm">' + esc(h.name) + '</span><span class="cd">' + esc(h.code) + '</span></span>' +
+        '<span class="c-price">' + ((q.f2 != null && q.f2 !== '-') ? Number(q.f2).toFixed(2) : '--') + '</span>' +
+        '<span class="c-pct ' + (pct == null ? 'flat' : cls(pct)) + '">' + (pct == null ? '--' : (pct > 0 ? '+' : '') + pct.toFixed(2) + '%') + '</span>' +
+        '<span class="c-w">' + h.w.toFixed(2) + '%</span>' +
+        '<span class="c-c ' + (contrib == null ? 'flat' : cls(contrib)) + '">' + (contrib == null ? '--' : (contrib > 0 ? '+' : '') + contrib.toFixed(2) + '%') + '</span>' +
+        '</div>'
+    })
+    return { html: html, est: est }
+  }
+
+  function renderMeta(stocks) {
+    var total = 0
+    stocks.forEach(function (s) { total += s.w })
+    var top10 = 0
+    for (var i = 0; i < Math.min(10, stocks.length); i++) top10 += stocks[i].w
+    setText('stockCount', stocks.length)
+    setText('stockWeight', total.toFixed(1) + '%')
+    setText('top10Weight', top10.toFixed(1) + '%')
+  }
+
+  function setStatus() {
+    var st = statusInfo()
+    var tag = $('statusTag')
+    if (tag) {
+      tag.textContent = st.text
+      tag.classList.remove('open', 'closed')
+      tag.classList.add(st.open ? 'open' : 'closed')
+    }
+  }
+
+  // ---------- 主流程 ----------
+  function refresh() {
+    if (busy) return
+    busy = true
+    setStatus()
+    setText('updateTime', fmtTime(new Date()))
+    var code = fundCode
+
+    // 持仓:仅切换基金或首次时重新抓取
+    var holdingsPromise
+    if (holdingsCode !== code) {
+      holdingsPromise = loadHoldings(code).then(function (r) {
+        holdings = r.list
+        holdingsSource = r.source
+        holdingsCode = code
+        if (r.name) { setText('fundName', r.name); document.title = r.name + ' 实时估值' }
+        renderMeta(holdings)
+        setText('holdingsSource', holdingsSource)
+      }).catch(function () {
+        holdings = []
+        holdingsSource = ''
+        setText('holdingsSource', '获取失败')
+      })
+    } else {
+      holdingsPromise = Promise.resolve()
+    }
+
+    holdingsPromise.then(function () {
+      if (!holdings.length) return
+      // 行情 + 测算估值
+      loadQuotes(holdings).then(function (qd) {
+        var diff = (qd && qd.data && qd.data.diff) || []
+        var map = {}
+        diff.forEach(function (d) { map[d.f12] = d })
+        var res = renderRows(holdings, map)
+        estPct = res.est
+        $('holdingsBody').innerHTML = res.html
+        setText('estChange', (res.est > 0 ? '+' : '') + res.est.toFixed(2) + '%')
+        setCls('estChange', res.est > 0 ? 'up' : (res.est < 0 ? 'down' : 'flat'))
+        setText('estTime', fmtTime(new Date()))
+        if (navVal != null) setText('estNav', (navVal * (1 + res.est / 100)).toFixed(4))
+      }).catch(function () {})
+    }).catch(function () {}).then(function () {
+      // 官方净值 + 名称
+      return loadFundInfo(code).then(function (info) {
+        navVal = info.navVal
+        if (info.name) { setText('fundName', info.name); document.title = info.name + ' 实时估值' }
+        setText('nav', Number(info.navVal).toFixed(4))
+        setText('navDate', info.navDate)
+        if (isNaN(info.chg)) {
+          setText('navChange', '--')
+          setCls('navChange', 'flat')
+        } else {
+          setText('navChange', (info.chg > 0 ? '+' : '') + info.chg.toFixed(2) + '%')
+          setCls('navChange', info.chg > 0 ? 'up' : (info.chg < 0 ? 'down' : 'flat'))
+        }
+        if (estPct != null) setText('estNav', (navVal * (1 + estPct / 100)).toFixed(4))
+      }).catch(function () {})
+    }).then(function () {
+      busy = false
+      schedule()
+    })
+  }
+
+  function schedule() {
+    if (timer) { clearInterval(timer); timer = null }
+    if (isTradingTime()) timer = setInterval(refresh, 15000)
+  }
+
+  function doSearch() {
+    var v = ($('codeInput').value || '').trim()
+    if (!/^\d{6}$/.test(v)) { alert('请输入6位基金代码'); return }
+    fundCode = v
+    try { localStorage.setItem('fundCode', v) } catch (e) {}
+    holdingsCode = ''
+    setText('fundCodeLabel', v)
+    refresh()
+  }
+
+  // ---------- 启动 ----------
+  $('codeInput').value = fundCode
+  setText('fundCodeLabel', fundCode)
+  $('searchBtn').addEventListener('click', doSearch)
+  $('codeInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch() })
+  refresh()
+  setInterval(setStatus, 30000)
+})()
+</script>
+</body>
+</html>
